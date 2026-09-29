@@ -60,6 +60,9 @@ public class GlobalExceptionHandler {
         if (msg.contains("UK_QUOTA_RSV_REQUEST")) {
             return ApiResponse.fail(BizCode.REQUEST_DUPLICATED);
         }
+        if (msg.contains("UK_REWORK_REQUEST")) {
+            return ApiResponse.fail(BizCode.REQUEST_DUPLICATED);
+        }
         if (msg.contains("UK_QUOTA_ACCOUNT_STORE")) {
             return ApiResponse.fail(BizCode.QUOTA_ACCOUNT_DUPLICATED);
         }

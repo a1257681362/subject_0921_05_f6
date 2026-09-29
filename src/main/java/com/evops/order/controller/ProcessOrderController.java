@@ -4,9 +4,11 @@ import com.evops.common.ApiResponse;
 import com.evops.order.dto.OrderActionRequest;
 import com.evops.order.dto.OrderCreateRequest;
 import com.evops.order.dto.OrderUpdateRequest;
+import com.evops.order.dto.ReworkRequest;
 import com.evops.order.entity.ProcessOrder;
 import com.evops.order.entity.ProcessOrderRx;
 import com.evops.order.entity.ProcessOrderStatusLog;
+import com.evops.order.entity.ProcessRework;
 import com.evops.order.service.ProcessOrderService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -98,6 +100,13 @@ public class ProcessOrderController {
         return ApiResponse.ok(orderService.restore(id, action(request)));
     }
 
+    /** 返修登记（仅已取镜；状态不变，只追加返修记录，不影响既有变更单流程） */
+    @PostMapping("/{id}/rework")
+    public ApiResponse<ProcessRework> rework(@PathVariable Long id,
+                                             @RequestBody(required = false) ReworkRequest request) {
+        return ApiResponse.ok(orderService.registerRework(id, request == null ? new ReworkRequest() : request));
+    }
+
     private OrderActionRequest action(OrderActionRequest request) {
         return request == null ? new OrderActionRequest() : request;
     }
@@ -109,6 +118,7 @@ public class ProcessOrderController {
         detail.put("prescriptions", prescriptions);
         List<ProcessOrderStatusLog> statusLogs = orderService.listStatusLogs(order.getId());
         detail.put("statusLogs", statusLogs);
+        detail.put("reworks", orderService.listReworks(order.getId()));
         return detail;
     }
 }

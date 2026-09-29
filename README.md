@@ -34,6 +34,8 @@ Spring Boot 骨架项目。技术栈：Java 8、Spring Boot 2.7、MyBatis-Plus�
 | `t_quota_account` | 门店额度账户（核定总额/预占中/已实扣，按门店唯一） |
 | `t_quota_reservation` | 额度预占单（RESERVED/CONFIRMED/RELEASED/EXPIRED，40 分钟有效） |
 | `t_quota_ledger` | 额度明细流水（只追加，每笔动作后账户快照，按 biz_date 对账） |
+| `t_process_rework` | 加工单返修记录（只追加；取镜后登记，状态不变，返修率依据） |
+| `t_report_export_log` | 周汇总报告导出留痕（只追加；周期/门店/文件清单，不存内容） |
 
 ## 加工单状态
 
@@ -87,6 +89,17 @@ RESERVED 占用中 ──confirm──▶ CONFIRMED 已实扣（终态，账户�
 - **日结对平**：`GET /api/quota/reconcile` 校验①当日预占合计 = 实扣+释放+过期+期末未结；②账户预占余额 = 全量未结预占单；③账户实扣累计 = 全量实扣流水；任一不等 `balanced=false` 并列出 `mismatches`。
 - 验光师操作手册：`docs/quota-ops-manual.md`（建户、日常四步、日结、演练方法，每条命令可照抄）。
 
+## 取镜后返修与加工单周汇总报告（poi-tl）
+
+门店增多后，验光师每周交的加工单汇总改用 **poi-tl Word 模板**导出，单号/镜款/返修率自动填充、按门店分别出文件。
+
+- **返修登记**：客户取镜后返修走 `POST /api/orders/{id}/rework`，只向只追加的 `t_process_rework` 追加一行（返修单号、加工单、原因、审计头）；**加工单状态保持 PICKED_UP，不走进度状态机，既有建档/修改/流转的变更单流程完全不变**。一单可多次返修；重复提交由 `uk_rework_request` 兜底。未取镜返回 `ORDER_NOT_PICKED_UP`。
+- **周汇总报告**：`GET /api/reports/weekly-orders?start=&end=&storeCode=`，口径为**周期内（按取镜 PICKUP 业务时间，含首尾）取镜的加工单**。自动填充加工单号、镜款（镜片名称/编码）、取镜日期、返修次数、是否返修；汇总区给出取镜总数、返修单数、返修总次数、**返修率（返修单数÷取镜总数，两位小数）**。
+- **批量按门店分别出文件**：不传 `storeCode`（全部有数据门店）或传多个 → 打包 **zip，每家门店一个 docx**；单个门店直接回 docx。每次导出写一行 `t_report_export_log` 留痕（批次号/周期/门店/文件名/操作人）。
+- **明细表行循环 + 隔行底色**：模板明细表数据行首格 `{{orders}}` 触发行复制（`LoopRowTableRenderPolicy(onSameLine=true)`），列内方括号字段 `[orderNo] [lensName] …`；渲染后由程序统一给第偶数条数据行着浅色底（`evops.report.zebra-stripe/zebra-color` 可调），无需在模板里逐行刷。
+- **模板变量改动不用改代码**：模板路径 `evops.report.weekly-template-path`（默认 `classpath:templates/weekly-orders.docx`，生产改 `file:/…` 外部化）。模板里写了数据中不存在的变量时自动留空不报错，增删抬头变量/明细列只改 docx；`file:` 模板按 mtime 懒热加载，改完即时生效、无需重启，也可 `POST /api/reports/weekly-template/reload` 立即重载。默认模板由 `scripts/build-weekly-template.sh`（读 `scripts/TemplateBuilder.java`）生成。
+- 验光师操作手册：`docs/weekly-order-report-guide.md`（返修登记、单店/批量导出、改模板、评审自查清单，每条命令可照抄）。
+
 ## 日志链路与聚合检索（总部质控要求）
 
 全链路基于 SLF4J MDC，每行日志统一格式：
@@ -118,6 +131,12 @@ RESERVED 占用中 ──confirm──▶ CONFIRMED 已实扣（终态，账户�
 - `GET  /api/orders/by-no/{orderNo}` 按加工单号检索（主单 + 有效处方 + 状态流转记录）
 - `GET  /api/orders/{id}`、`GET /api/orders?status=&storeCode=`
 - `POST /api/orders/{id}/start | /finish | /pickup | /cancel | /restore`
+- `POST /api/orders/{id}/rework` 取镜后返修登记（仅 PICKED_UP；状态不变，只追加）
+
+周汇总报告（操作手册 `docs/weekly-order-report-guide.md`）：
+
+- `GET  /api/reports/weekly-orders?start=&end=&storeCode=` 导出周汇总（storeCode 可重复；单店回 docx，多店/全部回 zip）
+- `GET  /api/reports/weekly-template/info` 模板状态；`POST /api/reports/weekly-template/reload` 立即重载外部模板
 
 敏感词管控：
 

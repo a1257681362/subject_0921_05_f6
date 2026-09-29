@@ -12,13 +12,16 @@ import com.evops.lens.service.LensService;
 import com.evops.order.dto.OrderActionRequest;
 import com.evops.order.dto.OrderCreateRequest;
 import com.evops.order.dto.OrderUpdateRequest;
+import com.evops.order.dto.ReworkRequest;
 import com.evops.order.dto.RxRequest;
 import com.evops.order.entity.ProcessOrder;
 import com.evops.order.entity.ProcessOrderRx;
 import com.evops.order.entity.ProcessOrderStatusLog;
+import com.evops.order.entity.ProcessRework;
 import com.evops.order.mapper.ProcessOrderMapper;
 import com.evops.order.mapper.ProcessOrderRxMapper;
 import com.evops.order.mapper.ProcessOrderStatusLogMapper;
+import com.evops.order.mapper.ProcessReworkMapper;
 import com.evops.sensitive.SensitiveWordService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,11 +30,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 加工单：建档（含左右眼处方）、修改、取镜状态流转、冲销/恢复、按单号检索。
@@ -63,6 +69,8 @@ public class ProcessOrderService {
     private LensMapper lensMapper;
     @Resource
     private SensitiveWordService sensitiveWordService;
+    @Resource
+    private ProcessReworkMapper reworkMapper;
 
     @Transactional(rollbackFor = Exception.class)
     public ProcessOrder create(OrderCreateRequest req) {
@@ -176,6 +184,58 @@ public class ProcessOrderService {
             throw new BizException(BizCode.ORDER_STATUS_ILLEGAL, "仅已冲销加工单可恢复");
         }
         return applyTransit(order, "RESTORE", CREATED, req.getRemark());
+    }
+
+    // ---------------- 返修登记 ----------------
+
+    /**
+     * 返修登记：仅已取镜（PICKED_UP）加工单可登记；加工单状态保持不变（不走状态机），
+     * 仅向只追加的返修表追加一行。同一请求号重复提交由 uk_rework_request 兜底。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProcessRework registerRework(Long id, ReworkRequest req) {
+        ProcessOrder order = requireOrder(id);
+        if (req != null && req.getVersionNo() != null
+                && !req.getVersionNo().equals(order.getVersionNo())) {
+            throw new BizException(BizCode.VERSION_CONFLICT);
+        }
+        if (!PICKED_UP.equals(order.getOrderStatus())) {
+            throw new BizException(BizCode.ORDER_NOT_PICKED_UP,
+                    "当前状态[" + order.getOrderStatus() + "]不允许登记返修，仅已取镜加工单可返修");
+        }
+
+        ProcessRework rework = new ProcessRework();
+        rework.setReworkNo(generateReworkNo());
+        rework.setOrderId(order.getId());
+        rework.setOrderNo(order.getOrderNo());
+        rework.setReworkReason(req == null ? null : trim(req.getReason()));
+        reworkMapper.insert(rework);
+
+        Long count = reworkMapper.selectCount(new LambdaQueryWrapper<ProcessRework>()
+                .eq(ProcessRework::getOrderId, order.getId()));
+        log.info("加工单返修登记 orderNo={} 返修单号={} 累计返修={}次",
+                order.getOrderNo(), rework.getReworkNo(), count);
+        return rework;
+    }
+
+    /** 某加工单的全部返修记录（按时间正序，只追加） */
+    public List<ProcessRework> listReworks(Long orderId) {
+        return reworkMapper.selectList(new LambdaQueryWrapper<ProcessRework>()
+                .eq(ProcessRework::getOrderId, orderId)
+                .orderByAsc(ProcessRework::getId));
+    }
+
+    private String generateReworkNo() {
+        String day = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String rand = UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
+        return "RW-" + day + "-" + rand;
+    }
+
+    private static String trim(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        return text.trim();
     }
 
     private ProcessOrder transit(Long id, String operType, String expectedFrom,

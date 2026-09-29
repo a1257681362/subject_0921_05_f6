@@ -50,6 +50,17 @@ evops:
     retain-days: 21
     # 到期清理执行时刻（每日）；默认凌晨 03:17，避开整点
     cleanup-cron: "0 17 3 * * ?"
+  report:
+    # 加工单周汇总报告 Word 模板（poi-tl）。classpath: 随包默认；
+    # 生产改 file:/path/weekly-orders.docx 外部化：改模板（抬头变量/明细列）即时生效，不用改代码
+    weekly-template-path: classpath:templates/weekly-orders.docx
+    # 明细表隔行底色（数据行第偶数条）；可关、可换色
+    zebra-stripe: true
+    zebra-color: F2F2F2
+    # 明细表在文档中的序号（从 0 开始；默认模板仅一张表）
+    detail-table-index: 0
+    # 单次导出统计周期上限（天），防误拉全量
+    max-period-days: 93
 
 logging:
   level:

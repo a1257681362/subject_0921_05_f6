@@ -23,6 +23,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
         <shiro.version>1.13.0</shiro.version>
+        <!-- 与 Spring Boot 2.7 托管的 POI 5.2.3 对齐，Java 8 兼容 -->
+        <poi-tl.version>1.12.2</poi-tl.version>
     </properties>
 
     <dependencies>
@@ -55,6 +57,12 @@
             <groupId>org.apache.shiro</groupId>
             <artifactId>shiro-spring-boot-web-starter</artifactId>
             <version>${shiro.version}</version>
+        </dependency>
+        <!-- Word 模板引擎：模板变量 + 明细表行循环，验光师周汇总报告用 -->
+        <dependency>
+            <groupId>com.deepoove</groupId>
+            <artifactId>poi-tl</artifactId>
+            <version>${poi-tl.version}</version>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>
