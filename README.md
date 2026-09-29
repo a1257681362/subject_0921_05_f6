@@ -1,6 +1,6 @@
 # EVOPS 基础工作区 —— 连锁眼镜店验光与加工底账
 
-Spring Boot 骨架项目。技术栈：Java 8、Spring Boot 2.7、MyBatis-Plus、H2 本地文件数据库、Shiro、Thymeleaf。
+Spring Boot 骨架项目。技术栈：Java 8、Spring Boot 2.7、MyBatis-Plus、H2 本地文件数据库、Shiro、Thymeleaf、poi-tl（Word 周报模板）。
 
 ## 启动
 
@@ -34,6 +34,8 @@ Spring Boot 骨架项目。技术栈：Java 8、Spring Boot 2.7、MyBatis-Plus�
 | `t_quota_account` | 门店额度账户（核定总额/预占中/已实扣，按门店唯一） |
 | `t_quota_reservation` | 额度预占单（RESERVED/CONFIRMED/RELEASED/EXPIRED，40 分钟有效） |
 | `t_quota_ledger` | 额度明细流水（只追加，每笔动作后账户快照，按 biz_date 对账） |
+| `t_order_change` | 加工单变更单（验光师改方/换镜款，评审安排与结论留痕，只追加） |
+| `t_weekly_report_log` | 加工单周报生成留痕（按店一行，返修率/镜款分布快照，只追加） |
 
 ## 加工单状态
 
@@ -86,6 +88,34 @@ RESERVED 占用中 ──confirm──▶ CONFIRMED 已实扣（终态，账户�
 - **明细流水可对账**：`t_quota_ledger` 只追加，每个动作一行（RESERVE/CONFIRM/RELEASE/EXPIRE），带业务日 `biz_date` 与动作后账户快照（`reserved_after/used_after`）。
 - **日结对平**：`GET /api/quota/reconcile` 校验①当日预占合计 = 实扣+释放+过期+期末未结；②账户预占余额 = 全量未结预占单；③账户实扣累计 = 全量实扣流水；任一不等 `balanced=false` 并列出 `mismatches`。
 - 验光师操作手册：`docs/quota-ops-manual.md`（建户、日常四步、日结、演练方法，每条命令可照抄）。
+
+## 加工单变更单（验光师改方/换镜款评审）
+
+连锁统一管理后，加工单变更不再口头说一声：验光师先提交**变更单**，安排评审、录入结论全部留痕；变更单**不直接改加工单**——评审通过后验光师仍走既有 `PUT /api/orders` 落库，**加工单写路径与状态流转一律不变**。
+
+```
+PENDING 待评审 ──schedule──▶ 待评审（带评审时间）──review approved──▶ APPROVED 通过（终态）
+                                              └──review rejected──▶ REJECTED 驳回（终态）
+（终态不可改；有新意见或被驳回后重新申请，另开一张新变更单）
+```
+
+- **两种变更类型**：`REWRITE` 改方（重配度数，默认）、`ALTER` 换镜款（变更镜片）。
+- **每单至多一张待评审**：业务层拦 + 库层生成列唯一约束 `uk_order_change_pending` 兜底并发；重复提交由 `uk_order_change_request(request_no)` 兜底。
+- **先安排后评审**：未排评审时间不能录结论（`ORDER_CHANGE_NOT_SCHEDULED`）；评审安排可改期（不能早于当前业务时间）。
+- 变更单只追加，`PENDING/APPROVED/REJECTED` 全程可查（按状态/加工单号/门店过滤）。
+- 变更单同样带三个审计请求头与版本号。
+
+## 验光师加工单汇总周报（poi-tl Word 模板）
+
+验光师每周的加工单汇总报告不再手写：基于 [poi-tl](https://deepoove.com/poi-tl/) Word 模板，变量与明细表循环自动填充，**支持批量按门店分别出文件**（每店一个 docx 打 ZIP）。
+
+- **自动填充**：门店、统计周期、加工单总数、**返修率**、**镜款分布**、生成时间；明细表按单一行循环：加工单号、镜款、开单日期、状态、客户（打码）、是否返修。
+- **明细表循环 + 隔行底色**：模板表头下一行首格写 `{{orders}}[orderNo]`（`{{orders}}` 与 `[orderNo]` 须分属不同文本 run），poi-tl `LoopRowTableRenderPolicy` 按明细复制行；隔行底色由 `ZebraLoopRowTablePolicy` 在渲染后统一刷（颜色 `evops.report.zebra-fill` 可配，默认 `F2F6FB`），模板里不用手工上色。
+- **返修率口径**：返修单 = 统计周期内有"评审通过"变更单（改方/换镜款）的加工单（按单去重）；返修率 = 返修单数 / 加工单总数。统计按建档时间落周期、**排除已冲销单**；镜款分布按镜片名称计数降序（`镜款×数量`）。
+- **模板变量改动不用改代码**：所有变量名、循环标签、明细列标签都在 `evops.report.tags.*` 配置。验光师在模板里把 `{{storeCode}}` 改成别的名字，只需在 yml 对齐同名配置；展示口径词（状态中文、返修/—）在 `evops.report.labels.*`。
+- **模板外置热更**：`evops.report.template-path` 默认 `classpath:report/templates/weekly-order-summary.docx`；生产指向 `file:/path/xxx.docx`，替换文件后下次生成即生效（渲染前懒检查 mtime，与敏感词库热更一致）。随包模板由 `scripts/gen-weekly-template.py` 幂等生成（手工排版容易把两个标签并进一个 run，故脚本直接写 OOXML 精确控制 run 边界）。
+- **生成留痕**：每次按店导出写一行 `t_weekly_report_log`（只追加，含返修率/镜款分布快照、文件名、批次号）；批量按店共享一个批次号。JSON 预览接口（`/preview`、`/batch/preview`）只看口径不落痕。
+- 使用说明与模板变量字典：`docs/weekly-report-guide.md`。
 
 ## 日志链路与聚合检索（总部质控要求）
 
@@ -140,6 +170,20 @@ RESERVED 占用中 ──confirm──▶ CONFIRMED 已实扣（终态，账户�
 - `POST /api/quota/release` 手工释放（过期单按超时还结算）；超时预占每分钟由定时任务自动归还（启动补扫）
 - `GET  /api/quota/reservations/{reservationNo}` 预占单
 - `GET  /api/quota/ledger?storeCode=&bizDate=` 明细流水（只追加）；`GET /api/quota/reconcile?storeCode=&bizDate=` 日结对平（balanced）
+
+加工单变更单（验光师改方/换镜款评审；写接口带审计头）：
+
+- `POST /api/order-changes` 提交变更单（`{"changeNo","orderNo","changeType":"REWRITE|ALTER","reason"}`，返回待评审单）
+- `POST /api/order-changes/{changeNo}/schedule` 安排验光师评审时间（`{"reviewTime":...}`，可改期）
+- `POST /api/order-changes/{changeNo}/review` 录入评审结论（`{"approved":true|false,"reviewComment"?}`，须先安排评审）
+- `GET  /api/order-changes/by-no/{changeNo}`；`GET /api/order-changes?status=&orderNo=&storeCode=` 列表
+
+验光师加工单汇总周报（poi-tl Word；导出接口带审计头，按店留痕）：
+
+- `GET  /api/reports/weekly/preview?storeCode=&periodStart=&periodEnd=` JSON 口径预览（不留痕，日期 yyyy-MM-dd）
+- `GET  /api/reports/weekly/docx?storeCode=&periodStart=&periodEnd=` 单店 Word 下载
+- `POST /api/reports/weekly/batch` 批量按店出文件（`{"storeCodes":[...],"periodStart":...,"periodEnd":...}`，storeCodes 空=全部有单门店），返回 ZIP（每店一个 docx），响应头带 `X-Batch-No` / `X-File-Count` / `X-Failed-Stores`
+- `POST /api/reports/weekly/batch/preview` 批量各店口径预览（不落盘不留痕）
 
 示例（接口走 Shiro 认证，测试/本地可用 bootstrap/bootstrap）：
 

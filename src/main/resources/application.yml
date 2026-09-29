@@ -50,6 +50,34 @@ evops:
     retain-days: 21
     # 到期清理执行时刻（每日）；默认凌晨 03:17，避开整点
     cleanup-cron: "0 17 3 * * ?"
+  report:
+    # 验光师加工单周报 Word 模板（poi-tl）。classpath: 随包默认；
+    # 生产改 file:/path/weekly-order-summary.docx 外置，替换文件后下次生成即生效（懒检查 mtime）。
+    template-path: classpath:report/templates/weekly-order-summary.docx
+    # 明细表隔行底色（十六进制 RGB）；留空不上色
+    zebra-fill: F2F6FB
+    # 明细表表头行数（数据行之前不参与隔行上色的行数）
+    detail-header-row: 1
+    # 单次批量按店导出的门店数上限
+    batch-store-limit: 200
+    # 模板变量/明细标签名：验光师改模板里的变量名后，在这里对齐即可，无需改代码
+    tags:
+      orders: orders            # 明细表循环标签（表头下一行数据行首格写 {{orders}}[orderNo]）
+      store-code: storeCode
+      period-start: periodStart
+      period-end: periodEnd
+      generated-at: generatedAt
+      total-count: totalCount
+      rework-count: reworkCount
+      rework-rate: reworkRate
+      lens-summary: lensSummary
+      columns:
+        order-no: orderNo
+        lens-name: lensName
+        order-date: orderDate
+        status-text: statusText
+        customer: customer
+        rework-text: reworkText
 
 logging:
   level:

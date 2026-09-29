@@ -60,11 +60,20 @@ public class GlobalExceptionHandler {
         if (msg.contains("UK_QUOTA_RSV_REQUEST")) {
             return ApiResponse.fail(BizCode.REQUEST_DUPLICATED);
         }
+        if (msg.contains("UK_ORDER_CHANGE_REQUEST")) {
+            return ApiResponse.fail(BizCode.REQUEST_DUPLICATED);
+        }
         if (msg.contains("UK_QUOTA_ACCOUNT_STORE")) {
             return ApiResponse.fail(BizCode.QUOTA_ACCOUNT_DUPLICATED);
         }
         if (msg.contains("UK_ORDER_NO")) {
             return ApiResponse.fail(BizCode.ORDER_NO_DUPLICATED);
+        }
+        if (msg.contains("UK_ORDER_CHANGE_NO")) {
+            return ApiResponse.fail(BizCode.ORDER_CHANGE_NO_DUPLICATED);
+        }
+        if (msg.contains("UK_ORDER_CHANGE_PENDING")) {
+            return ApiResponse.fail(BizCode.ORDER_CHANGE_ALREADY_PENDING);
         }
         if (msg.contains("UK_LENS_CODE")) {
             return ApiResponse.fail(BizCode.LENS_CODE_DUPLICATED);
@@ -73,6 +82,20 @@ public class GlobalExceptionHandler {
             return ApiResponse.fail(BizCode.RX_EYE_DUPLICATED);
         }
         return ApiResponse.fail(BizCode.DATA_DUPLICATED);
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ApiResponse<Void> handleMissingParam(
+            org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        log.warn("缺少必填请求参数：{}", ex.getParameterName());
+        return ApiResponse.fail(BizCode.VALIDATION_FAILED, "缺少必填参数：" + ex.getParameterName());
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ApiResponse<Void> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        log.warn("请求参数类型不正确：{}", LogMasks.singleLine(ex.getMessage()));
+        return ApiResponse.fail(BizCode.VALIDATION_FAILED, "参数格式不正确：" + ex.getName());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

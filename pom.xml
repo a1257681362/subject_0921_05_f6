@@ -23,6 +23,9 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
         <shiro.version>1.13.0</shiro.version>
+        <!-- poi-tl 1.12.x 基于 POI 5.2.5；显式锁定避免与 spring-boot 依赖管理中的旧 POI 版本混用 -->
+        <poi-tl.version>1.12.2</poi-tl.version>
+        <poi.version>5.2.5</poi.version>
     </properties>
 
     <dependencies>
@@ -60,6 +63,22 @@
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <!-- poi-tl：Word 模板引擎（{{变量}} 与循环明细表），验光师加工单周报导出 -->
+        <dependency>
+            <groupId>com.deepoove</groupId>
+            <artifactId>poi-tl</artifactId>
+            <version>${poi-tl.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
